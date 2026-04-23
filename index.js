@@ -82,7 +82,7 @@ app.post('/users', async (req, res) => {
     // ✅ Check duplicate user
     const existingUser = await pool.query(
       'SELECT * FROM users WHERE firebase_uid = $1',
-      [firebase_uid]
+      [firebase_uid],
     );
 
     if (existingUser.rows.length > 0) {
@@ -104,7 +104,7 @@ app.post('/users', async (req, res) => {
         address || '',
         location || '',
         role || 'user',
-      ]
+      ],
     );
 
     res.status(201).json(result.rows[0]);
@@ -125,7 +125,7 @@ app.post('/auth/login', async (req, res) => {
 
     const result = await pool.query(
       'SELECT * FROM users WHERE firebase_uid = $1',
-      [firebase_uid]
+      [firebase_uid],
     );
 
     const user = result.rows[0];
@@ -154,7 +154,7 @@ app.get('/profile', verifyJWT, async (req, res) => {
 
     const result = await pool.query(
       'SELECT * FROM users WHERE firebase_uid = $1',
-      [firebase_uid]
+      [firebase_uid],
     );
 
     res.json(result.rows[0]);
@@ -171,7 +171,7 @@ const verifyAdmin = async (req, res, next) => {
 
     const result = await pool.query(
       'SELECT role FROM users WHERE firebase_uid = $1',
-      [firebase_uid]
+      [firebase_uid],
     );
 
     const user = result.rows[0];
@@ -207,9 +207,112 @@ app.get('/products/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
+    const result = await pool.query('SELECT * FROM products WHERE id = $1', [
+      id,
+    ]);
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/cart/add', async (req, res) => {
+  try {
+    const {
+      gmail,
+      product_name,
+      product_image,
+      price,
+      quantity,
+      size, // ✅ ADD THIS
+    } = req.body;
+
+    // 🛑 validation
+    if (!gmail || !product_name) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // ❗ IMPORTANT: now match by size too
+    const check = await pool.query(
+      'SELECT * FROM cart WHERE gmail = $1 AND product_name = $2 AND size = $3',
+      [gmail, product_name, size],
+    );
+
+    // 🔄 update quantity if exists (same product + same size)
+    if (check.rows.length > 0) {
+      const updated = await pool.query(
+        `UPDATE cart 
+         SET quantity = quantity + $4
+         WHERE gmail = $1 AND product_name = $2 AND size = $3
+         RETURNING *`,
+        [gmail, product_name, size, quantity || 1],
+      );
+
+      return res.json({
+        message: 'Cart updated',
+        cart: updated.rows[0],
+      });
+    }
+
+    // ➕ insert new item WITH SIZE
     const result = await pool.query(
-      'SELECT * FROM products WHERE id = $1',
-      [id]
+      `INSERT INTO cart 
+      (gmail, product_name, product_image, price, quantity, size)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *`,
+      [gmail, product_name, product_image, price, quantity || 1, size],
+    );
+
+    return res.json({
+      message: 'Item added to cart',
+      cart: result.rows[0],
+    });
+  } catch (err) {
+    console.error('❌ Cart error:', err);
+    res.status(500).json({ error: 'Cart insert failed' });
+  }
+});
+
+app.get('/cart/:gmail', async (req, res) => {
+  try {
+    const { gmail } = req.params;
+
+    const result = await pool.query('SELECT * FROM cart WHERE gmail=$1', [
+      gmail,
+    ]);
+
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/cart/delete', async (req, res) => {
+  try {
+    const { gmail, product_name } = req.body;
+
+    await pool.query('DELETE FROM cart WHERE gmail=$1 AND product_name=$2', [
+      gmail,
+      product_name,
+    ]);
+
+    res.json({ message: 'Deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/cart/update', async (req, res) => {
+  try {
+    const { gmail, product_name, quantity } = req.body;
+
+    const result = await pool.query(
+      `UPDATE cart 
+       SET quantity=$1 
+       WHERE gmail=$2 AND product_name=$3 
+       RETURNING *`,
+      [quantity, gmail, product_name],
     );
 
     res.json(result.rows[0]);
