@@ -225,7 +225,7 @@ app.post('/cart/add', async (req, res) => {
       product_image,
       price,
       quantity,
-      size, // ✅ ADD THIS
+      size, 
     } = req.body;
 
     // 🛑 validation
@@ -313,6 +313,64 @@ app.put('/cart/update', async (req, res) => {
        WHERE gmail=$2 AND product_name=$3 
        RETURNING *`,
       [quantity, gmail, product_name],
+    );
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/categories-products', async (req, res) => {
+  try {
+    // 📂 CATEGORY WISE PRODUCTS
+    const categoriesResult = await pool.query(`
+      SELECT 
+        category,
+        json_agg(accessories ORDER BY id DESC) AS products
+      FROM accessories
+      GROUP BY category
+      ORDER BY category;
+    `);
+
+    // 🔥 RANDOM 3 HIGHLIGHTS
+    const highlightsResult = await pool.query(`
+      SELECT *
+      FROM accessories
+      ORDER BY RANDOM()
+      LIMIT 3;
+    `);
+
+    // FINAL RESPONSE
+    res.json({
+      categories: categoriesResult.rows,
+      highlights: highlightsResult.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/accessories/all', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT * FROM accessories
+      ORDER BY id DESC;
+    `);
+
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/accessories/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      'SELECT * FROM accessories WHERE id = $1',
+      [id]
     );
 
     res.json(result.rows[0]);
